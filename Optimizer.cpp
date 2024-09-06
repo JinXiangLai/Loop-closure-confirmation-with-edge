@@ -5,6 +5,8 @@
 using namespace std;
 using namespace cv;
 
+constexpr double kPriorDepthWeight = 1000;
+
 Optimizer::Optimizer(const vector<Mat> &dist, const vector<Mat> &dx, const vector<Mat> &dy, const double lambda, 
     const int maxIte, const bool useInvDepth) 
     : lambda_(lambda)
@@ -17,7 +19,7 @@ Optimizer::Optimizer(const vector<Mat> &dist, const vector<Mat> &dx, const vecto
 Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const vector<Pose> &T12){
     
     constexpr int resDim = 1;
-    Eigen::VectorXd res(pc1.size() * T12.size() * resDim);
+    Eigen::VectorXd res(pc1.size() * T12.size() * resDim + pc1.size());
     res.setZero();
 
     const shared_ptr<Camera> cam = pc1[0].cam_;
@@ -38,6 +40,17 @@ Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const 
             }
         }
     }
+
+    // 添加残差，避免深度值z为负
+    const int startRow = pc1.size() * T12.size() * resDim;
+    for(int i = 0; i < pc1.size(); ++i) {
+        if(useInvDepth_) {
+            res[startRow+i] = exp(-kPriorDepthWeight / pc1[i].invZ_);
+            continue;
+        }
+        res[startRow+i] = exp(-kPriorDepthWeight * pc1[i].z_);
+
+    }
     cout << "residual noInrangeNum: " << noInrangeNum << endl;
     return res;
 }
@@ -45,7 +58,7 @@ Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const 
 Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const vector<Pose> &T12) {
     
     constexpr int resDim = 1;
-    Eigen::MatrixXd J(pc1.size()*T12.size()*resDim, T12.size()*T12[0].Size() + pc1.size()*pc1[0].Size());
+    Eigen::MatrixXd J(pc1.size()*T12.size()*resDim + pc1.size(), T12.size()*T12[0].Size() + pc1.size()*pc1[0].Size());
     J.setZero();
 
     /******** 投影过程 ********
@@ -111,6 +124,16 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
             J.block(i * pc1.size() + j, poseStartCol, 1, 6) = J_res_px2 * J_px2_Pc2 * J_Pc2_T12;
             J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
         }
+    }
+
+    // 添加深度值z非负雅可比
+    const int startRow = pc1.size() * T12.size() * resDim;
+    int pointStartCol = T12.size() * T12[0].Size();
+    for(int i = 0; i < pc1.size(); ++i) {
+        if(useInvDepth_) {
+            J.block(startRow+i, pointStartCol+i, 1, 1) << kPriorDepthWeight / pow(pc1[i].invZ_, 2) * exp(-kPriorDepthWeight / pc1[i].invZ_);
+        }
+        J.block(startRow+i, pointStartCol+i, 1, 1) << -kPriorDepthWeight * exp(-kPriorDepthWeight * pc1[i].z_);
     }
 
     return J;
