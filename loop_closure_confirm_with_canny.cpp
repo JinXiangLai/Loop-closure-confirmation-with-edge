@@ -31,8 +31,8 @@ int main(int argc, char** argv){
         pc1.push_back(Landmark(blackPoint1[i], Twc1, cam, kZ[i%kZnum]));
     }
     
-    auto GenerateData = [&pc1_true, &cam, &showImg](const Pose &Tc1c2, const string &id, Mat &dist, Mat &dx, Mat &dy) {
-        
+    auto GenerateData = [&pc1_true, &cam, &showImg](const Pose &Tc1c2, const string &id, 
+                            Mat &edgeImg, Mat &dist, Mat &dx, Mat &dy) {
         const Pose Tc2c1 = Tc1c2.Inverse();
         vector<Eigen::Vector3d> pc2 = TransformPoint2Pc(Tc2c1, pc1_true);
         vector<Eigen::Vector2d> blackPoint2;
@@ -40,10 +40,10 @@ int main(int argc, char** argv){
             blackPoint2.push_back(cam->Project2PixelPlane(p));
         }
 
-        Mat edgeImg2 = GenerateEdgeImage(blackPoint2);
-        ShowImage(edgeImg2, "edgeImg" + id, showImg);
+        edgeImg = GenerateEdgeImage(blackPoint2);
+        ShowImage(edgeImg, "edgeImg" + id, showImg);
 
-        dist = GetDistanceTransform(edgeImg2);
+        dist = GetDistanceTransform(edgeImg);
         ShowImage(dist, "dist trans" + id, showImg);
 
         CaculateDerivative(dist, dx, dy);
@@ -57,16 +57,16 @@ int main(int argc, char** argv){
                              * Eigen::AngleAxisd(0. * kRad2Deg, Eigen::Vector3d::UnitZ());
     Eigen::Vector3d t_c1c2{0.5, 0.1, -0.5};
     Pose Tc1c2(q_c1c2, t_c1c2);
-    Mat dist2, dx2, dy2;
-    GenerateData(Tc1c2, "2", dist2, dx2, dy2);
+    Mat edgeImg2, dist2, dx2, dy2;
+    GenerateData(Tc1c2, "2", edgeImg2, dist2, dx2, dy2);
 
     Eigen::Quaterniond q_c1c3 = Eigen::AngleAxisd(20 * kDeg2Rad, Eigen::Vector3d::UnitY())
                              * Eigen::AngleAxisd(0. * kRad2Deg, Eigen::Vector3d::UnitX())
                              * Eigen::AngleAxisd(0. * kRad2Deg, Eigen::Vector3d::UnitZ());
     Eigen::Vector3d t_c1c3{1.0, 0.1, -0.8};
     Pose Tc1c3(q_c1c3, t_c1c3);
-    Mat dist3, dx3, dy3;
-    GenerateData(Tc1c3, "3;", dist3, dx3, dy3);
+    Mat edgeImg3, dist3, dx3, dy3;
+    GenerateData(Tc1c3, "3;", edgeImg3, dist3, dx3, dy3);
 
     Eigen::Quaterniond disturbQ = Eigen::AngleAxisd(10 * kDeg2Rad, Eigen::Vector3d::UnitY())
                              * Eigen::AngleAxisd(0. * kRad2Deg, Eigen::Vector3d::UnitX())
@@ -99,13 +99,23 @@ int main(int argc, char** argv){
 
     cout << "pc1 num: " << pc1.size() << endl;
     for(const Landmark &p : pc1) {
-            cout << setprecision(2) << p.z_ << " ";
+        cout << setprecision(2) << p.z_ << " ";
     }
     cout << endl;
 
-    for(int i = 0; i < T12.size(); ++i) {
-        cout << "Pose diff " << i << ": " << T12_true[i].Inverse() * T12[i] << endl; 
+    vector<vector<Eigen::Vector2d> > match(T12.size());
+    vector<Pose> T21 = T12;
+    for(Pose &T : T21) {
+        T = T.Inverse();
     }
+    for(int i = 0; i < T12.size(); ++i) {
+        cout << "Pose diff " << i << ": " << T12_true[i].Inverse() * T12[i] << endl;
+        for(const Landmark &p : pc1) {
+            match[i].push_back(p.cam_->Project2PixelPlane(T21[i] * p.GetPc()));
+        }
+    }
+    DrawMatch(edgeImg1, edgeImg2, blackPoint1, match[0]);
+    DrawMatch(edgeImg1, edgeImg3, blackPoint1, match[1]);
 
     return 0;
 }

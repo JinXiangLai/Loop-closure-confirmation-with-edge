@@ -201,7 +201,7 @@ double BilinearInterpolate(const cv::Mat &img, const Eigen::Vector2d &p) {
     const int row = img.rows;
     const int x = int(p.x());
     const int y = int(p.y());
-    if(x == col-1 || x == 0 || y == row-1 || y == 0) {
+    if(x == col-1 || x == 0 || y == row-1 || y == 0 || 1) {
         return img.at<float>(y, x);
     }
 
@@ -276,4 +276,30 @@ std::ostream& operator<<(std::ostream &cout, const Pose& T){
     cout << std::setprecision(2) << "RPY | t: " << Quat2RPY(T.q_wb_).transpose() * kRad2Deg 
          << " | " << T.t_wb_.transpose();
     return cout;
+}
+
+void DrawMatch(const Mat &img1, const Mat &img2, const vector<Eigen::Vector2d> &kp1, const vector<Eigen::Vector2d> &kp2) {
+    Assert(kp1.size()==kp2.size(), "match point size error!");
+    Mat im(max(img1.rows, img2.rows), img1.cols+img2.cols, CV_8UC3, cv::Scalar{0, 0, 0});
+    const int sCol = img1.cols;
+    cv::Scalar pColor = cv::Scalar(0, 255, 0);
+    int radius = 1;
+    cv::Scalar lColor = cv::Scalar(255, 255, 255);
+
+    for(int i = 0; i < kp1.size(); ++i) {
+        if(!InRange(img2, kp2[i].cast<int>())) {
+            continue;
+        }
+        cv::Point c1(kp1[i].x(), kp1[i].y());
+        cv::Point c2(sCol+kp2[i].x(), kp2[i].y());
+        cv::circle(im, c1, radius, pColor, 1);
+        cv::circle(im, c2, radius, pColor, 1);
+        if(i%10 == 0){
+            cv::line(im, c1, c2, lColor, 1);
+        }    
+    }
+    cv::namedWindow("matches");
+    cv::imshow("matches", im);
+    cv::imwrite("./matches.png", im);
+    cv::waitKey(0);
 }

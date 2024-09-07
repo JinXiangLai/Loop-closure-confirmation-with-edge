@@ -97,4 +97,7 @@ Eigen::Vector3d Quat2RPY(const Eigen::Quaterniond &_q);
 
 std::ostream& operator<<(std::ostream &cout, const Pose& T);
 
+void DrawMatch(const cv::Mat &img1, const cv::Mat &img2, const std::vector<Eigen::Vector2d> &kp1, 
+    const std::vector<Eigen::Vector2d> &kp2);
+
 #endif
