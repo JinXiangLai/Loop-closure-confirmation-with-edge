@@ -122,7 +122,7 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
 
             // 给整体雅可比矩阵赋值
             J.block(i * pc1.size() + j, poseStartCol, 1, 6) = J_res_px2 * J_px2_Pc2 * J_Pc2_T12;
-            J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
+            //J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
         }
     }
 

@@ -13,6 +13,9 @@ constexpr int kImageWidth = 192;
 constexpr int kImageHeight = 108;
 constexpr double kRad2Deg = 180/M_PI;
 constexpr double kDeg2Rad = M_PI/180;
+constexpr int kZnum = 10;
+constexpr double kZ[kZnum] = {2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0};
+
 
 class Pose {
 public:
@@ -21,6 +24,8 @@ public:
     Pose(const Eigen::Quaterniond& q_wb, const Eigen::Vector3d& t_wb);
     Pose Inverse() const;
     Eigen::Vector3d operator*(const Eigen::Vector3d &p) const;
+    Pose operator*(const Pose& T) const;
+    friend std::ostream& operator<<(std::ostream &cout, const Pose& T);
     int Size() const;
     void Update(const Eigen::Vector3d &delta_q, const Eigen::Vector3d &delta_t);
 
@@ -87,5 +92,9 @@ double BilinearInterpolate(const cv::Mat &img, const Eigen::Vector2d &p);
 void Assert(bool a, const std::string &s);
 
 void ShowImage(const cv::Mat &img, const std::string &name, const bool show = true);
+
+Eigen::Vector3d Quat2RPY(const Eigen::Quaterniond &_q);
+
+std::ostream& operator<<(std::ostream &cout, const Pose& T);
 
 #endif

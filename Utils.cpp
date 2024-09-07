@@ -15,6 +15,10 @@ Pose Pose::Inverse() const {
     return Pose(q_bw, t_bw);
 }
 
+Pose Pose::operator*(const Pose& T) const {
+    return Pose(q_wb_ * T.q_wb_, q_wb_*T.t_wb_+t_wb_);
+}
+
 Eigen::Vector3d Pose::operator*(const Eigen::Vector3d &p) const {
     return q_wb_ * p + t_wb_;
 }
@@ -60,6 +64,7 @@ Eigen::Vector3d Camera::InverseProject(const Eigen::Vector2i &uv, const double &
 Landmark::Landmark(const Eigen::Vector2d &px, std::shared_ptr<Pose> Twc, const std::shared_ptr<Camera> cam, 
     const double z)
     : z_(z)
+    , invZ_(1.0/z)
     , uv_(px)
     , Twc_(Twc)
     , cam_(cam) {}
@@ -134,11 +139,10 @@ vector<Eigen::Vector2d> GenerateBlackPoint() {
 
 vector<Eigen::Vector3d> GeneratePw(const vector<Eigen::Vector2d> &blackPoint, const std::shared_ptr<Camera> &cam) {
     vector<Eigen::Vector3d> Pw;
-    double z[10] = {2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0};
     int id = 0;
     for(const Eigen::Vector2d &p : blackPoint) {
         // cout << "id++%4: " << id++%4 << endl; --id;
-        Pw.push_back({cam->InverseProject(p.cast<int>(), z[(id++)%10])});
+        Pw.push_back({cam->InverseProject(p.cast<int>(), kZ[(id++)%kZnum])});
     }
     return Pw;
 }
@@ -239,4 +243,37 @@ void ShowImage(const cv::Mat &img, const std::string &name, const bool show) {
     m.convertTo(m, CV_8UC1);
     cv::imshow(name, m);
     cv::waitKey(0);
+}
+
+Eigen::Vector3d Quat2RPY(const Eigen::Quaterniond &_q){
+    const Eigen::Quaterniond q = _q.normalized();
+    const double x = q.x(), y = q.y(), z = q.z(), w = q.w();
+    
+    // 防止除以零  
+    double epsilon = 1e-6;  
+      
+    // roll (x-axis rotation)  
+    double sinr_cosp = 2.0 * (w * x + y * z);  
+    double cosr_cosp = 1.0 - 2.0 * (x * x + y * y);  
+    const double roll = std::atan2(sinr_cosp, cosr_cosp);  
+  
+    // pitch (y-axis rotation)  
+    double sinp = 2.0 * (w * y - z * x); 
+    double pitch = 0;
+    if (std::abs(sinp) >= 1)  
+        pitch = std::copysign(M_PI / 2, sinp); // 使用90度或-90度  
+    else  
+        pitch = std::asin(sinp);  
+  
+    // yaw (z-axis rotation)  
+    double siny_cosp = 2.0 * (w * z + x * y);  
+    double cosy_cosp = 1.0 - 2.0 * (y * y + z * z);  
+    const double yaw = std::atan2(siny_cosp, cosy_cosp);
+    return {roll, pitch, yaw};
+}
+
+std::ostream& operator<<(std::ostream &cout, const Pose& T){
+    cout << std::setprecision(2) << "RPY | t: " << Quat2RPY(T.q_wb_).transpose() * kRad2Deg 
+         << " | " << T.t_wb_.transpose();
+    return cout;
 }
