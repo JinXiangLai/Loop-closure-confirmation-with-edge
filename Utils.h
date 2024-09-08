@@ -13,8 +13,8 @@ constexpr int kImageWidth = 192;
 constexpr int kImageHeight = 108;
 constexpr double kRad2Deg = 180/M_PI;
 constexpr double kDeg2Rad = M_PI/180;
-constexpr int kZnum = 10;
-constexpr double kZ[kZnum] = {2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0};
+constexpr int kZnum = 4;
+constexpr double kZ[kZnum] = {1.1, 2.2, 3.3, 4.4};
 
 
 class Pose {
@@ -40,7 +40,7 @@ public:
 
     // 实现不考虑畸变参数
     Camera();
-    Eigen::Vector2d Project2PixelPlane(const Eigen::Vector3d &Pc);
+    Eigen::Vector2d Project2PixelPlane(const Eigen::Vector3d &Pc) const;
     Eigen::Vector3d InverseProject(const Eigen::Vector2i &uv, const double &z = 1.0) const;
 
     Eigen::Matrix3d K_ = Eigen::Matrix3d::Identity();
@@ -98,6 +98,17 @@ Eigen::Vector3d Quat2RPY(const Eigen::Quaterniond &_q);
 std::ostream& operator<<(std::ostream &cout, const Pose& T);
 
 void DrawMatch(const cv::Mat &img1, const cv::Mat &img2, const std::vector<Eigen::Vector2d> &kp1, 
-    const std::vector<Eigen::Vector2d> &kp2);
+    const std::vector<Eigen::Vector2d> &kp2, const std::string &name = "matches");
 
+std::vector<Eigen::Vector2d> FindMatches(const Eigen::Vector2d &kp1, const cv::Mat &edgeImg, const Pose &T21, const Camera &cam);
+
+Eigen::Vector3d Triangulate(const Eigen::Vector2d &kp2, const Pose &T21, const Camera &cam);
+
+Eigen::Vector3d Triangulate(const Eigen::Vector2d &kp1, const Eigen::Vector2d &kp2, const Pose &T21, const Camera &cam);
+
+Eigen::Vector3d Triangulate(const Eigen::Vector2d &kp1, const std::vector<Eigen::Vector2d> &kp2, const Pose &T21, const Camera &cam);
+
+Pose ConvertRPYandPostion2Pose(const Eigen::Vector3d &rpy, const Eigen::Vector3d &t, const double deg2rad = kDeg2Rad);
+
+void varifyTriangulate();
 #endif

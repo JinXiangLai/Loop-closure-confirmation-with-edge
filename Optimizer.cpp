@@ -33,7 +33,11 @@ Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const 
             const Eigen::Vector2d px = cam->Project2PixelPlane(pc);
             if(InRange(dist, px.cast<int>())) {
                 // res[i*pc1.size()*resDim + j] = dist_.at<float>(px.y(), px.x());
-                res[i*pc1.size()*resDim + j] = BilinearInterpolate(dist, px);
+                const double r = BilinearInterpolate(dist, px);
+                // TODO: 增加异常值鲁棒核函数
+                if(r < 5) {
+                    res[i*pc1.size()*resDim + j] = r;
+                }
             } else {
                 ++noInrangeNum;
                 continue;
@@ -121,8 +125,9 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
             }
 
             // 给整体雅可比矩阵赋值
+            // TODO： 不需要Fixed pose，只要相对Pose准确
             J.block(i * pc1.size() + j, poseStartCol, 1, 6) = J_res_px2 * J_px2_Pc2 * J_Pc2_T12;
-            //J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
+            J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
         }
     }
 
@@ -135,6 +140,9 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
         }
         J.block(startRow+i, pointStartCol+i, 1, 1) << -kPriorDepthWeight * exp(-kPriorDepthWeight * pc1[i].z_);
     }
+
+    // TODO：添加先验pose约束
+    
 
     return J;
 }
@@ -184,11 +192,13 @@ bool Optimizer::Optimize(vector<Landmark> &pc1, vector<Pose> &T12) {
             lambda_ *= 0.5;
             lastCost = cost;
         }
-        if(cost < 1e-3) {
+        if(cost < 1e-9) {
             cout << "Congratulations! LM converge!!!" << endl;
+            cout << "First cost | final cost: " << firstCost << " | " << lastCost << endl;
             return true;
         }
     }
+    cout << "Reach max iteration time." << endl;
     cout << "First cost | final cost: " << firstCost << " | " << lastCost << endl;
 
     return false;
