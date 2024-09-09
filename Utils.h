@@ -45,9 +45,7 @@ public:
 
     Eigen::Matrix3d K_ = Eigen::Matrix3d::Identity();
     Eigen::Matrix3d K_inv_ = Eigen::Matrix3d::Identity();
-private:
     double fx_, fy_, cx_, cy_;
-
 };
 
 class Landmark {
@@ -101,6 +99,9 @@ void DrawMatch(const cv::Mat &img1, const cv::Mat &img2, const std::vector<Eigen
     const std::vector<Eigen::Vector2d> &kp2, const std::string &name = "matches");
 
 std::vector<Eigen::Vector2d> FindMatches(const Eigen::Vector2d &kp1, const cv::Mat &edgeImg, const Pose &T21, const Camera &cam);
+
+std::vector<Eigen::Vector2d> FindMatchesWithEpipolarConstraintOnImagePlane(const Eigen::Vector2d &kp1, const cv::Mat &edgeImg, 
+    const Pose &T21, const Camera &cam);
 
 Eigen::Vector3d Triangulate(const Eigen::Vector2d &kp2, const Pose &T21, const Camera &cam);
 

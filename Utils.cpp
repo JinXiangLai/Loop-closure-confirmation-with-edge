@@ -391,6 +391,70 @@ vector<Eigen::Vector2d> FindMatches(const Eigen::Vector2d &kp1, const Mat &edgeI
     return kp2;
 }
 
+// 比像素平面上的极线约束多了N次投影到像素平面的运算
+vector<Eigen::Vector2d> FindMatchesWithEpipolarConstraintOnImagePlane(const Eigen::Vector2d &kp1, const Mat &edgeImg, 
+    const Pose &T21, const Camera &cam) {
+    /******** 使用极线约束寻找匹配关键点 ********
+    * R21 * s1 * Pc1_norm + t21 = s2 * Pc2_norm
+    * R21 * s1/s2 * Pc1_norm + 1/s2 * t21 = Pc2_norm
+    * [t21]x * R21 * s1/s2 * Pc1_norm = [t21]x * Pc2_norm
+    * Pc2_norm.T * [t21]x * R21 * s1/s2 * Pc1_norm = 0
+    * Pc2_norm.T * [t21]x * R21 * Pc1_norm = 0 --------> 归一化平面上极线约束
+    * fx*x+cx = px_x ==> 归一化平面上[1/fx]米对应1个像素
+    * fy*y+cy = px_y 
+    ********************************************/
+    Eigen::Vector3d c = skewSymmetric(T21.t_wb_) * T21.q_wb_.toRotationMatrix() * cam.InverseProject(kp1.cast<int>());
+    // c[0]*x + c[1]*y + c[2] = 0 ==> 归一化平面上的极线
+    // y = -c[0]/c[1]*x - c[2]/c[1]
+    
+    auto Kp2Useful = [&edgeImg](const Eigen::Vector2i &p) -> bool {
+        const int x=p[0], y=p[1];
+        // InRange函数保证(y, x)点的十字架处像素不会超过索引
+        return InRange(edgeImg, p) && (!edgeImg.at<uchar>(y, x)
+                || !edgeImg.at<uchar>(y-1, x) || !edgeImg.at<uchar>(y+1, x)
+                || !edgeImg.at<uchar>(y, x-1) || !edgeImg.at<uchar>(y, x+1));
+    };
+
+    vector<Eigen::Vector2d> kp2;
+    auto IsZero = [](const double a) -> bool {return abs(a) < 1e-10;};
+
+    const double xStep = 1.0/cam.fx_, yStep = 1.0/cam.fy_;
+    const double xStart = -cam.cx_/cam.fx_ + xStep, yStart = -cam.cy_/cam.fy_ + yStep;
+    const double xEnd = -xStart, yEnd = -yStart;
+
+    if(IsZero(c[1]) && IsZero(c[0])) {
+        return kp2; 
+    } else if(IsZero(c[1]) && !IsZero(c[0]) ) {
+        const double x = -c[2]/c[0]; // 归一化平面坐标
+        cout << "x: " << x << endl;
+        for(double y = yStart; y < yEnd; y+=yStep) {
+            const Eigen::Vector2d px = cam.Project2PixelPlane({x, y, 1}) ;
+            if(Kp2Useful(px.cast<int>()) ) {
+                kp2.push_back(px.cast<double>() );
+            }
+        }
+    } else if(!IsZero(c[1]) && IsZero(c[0]) ) {
+        const double y = -c[2]/c[1];
+        for(double x = xStart; x < xEnd; x+=xStep) {
+            const Eigen::Vector2d px = cam.Project2PixelPlane({x, y, 1});
+            if(Kp2Useful(px.cast<int>()) ) {
+                kp2.push_back(px.cast<double>() );
+            }
+        }
+    } else {
+        // y = ax + b
+        const double a = -c[0]/c[1], b = -c[2]/c[1];
+        for(double x = xStart; x < xEnd; x+=xStep) {
+            const double y = a*x + b;
+            const Eigen::Vector2d px = cam.Project2PixelPlane({x, y, 1});
+            if(Kp2Useful(px.cast<int>()) ) {
+                kp2.push_back(px.cast<double>() );
+            }
+        }
+    }
+    return kp2;
+}
+
 
 Eigen::Vector3d Triangulate(const Eigen::Vector2d &kp2, const Pose &T21, const Camera &cam) {
     /******** 三角化地图点 ********

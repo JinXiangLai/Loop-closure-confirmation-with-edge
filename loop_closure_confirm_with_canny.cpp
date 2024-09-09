@@ -64,7 +64,8 @@ int main(int argc, char** argv){
     vector<Landmark> pc1;
     const Pose Tc2c1 = Tc1c2.Inverse();
     for(int i = 0; i < blackPoint1.size(); ++i) {
-        const std::vector<Eigen::Vector2d> kp2 = FindMatches(blackPoint1[i], edgeImg2, Tc2c1, *cam);
+        // const std::vector<Eigen::Vector2d> kp2 = FindMatches(blackPoint1[i], edgeImg2, Tc2c1, *cam);
+        const std::vector<Eigen::Vector2d> kp2 = FindMatchesWithEpipolarConstraintOnImagePlane(blackPoint1[i], edgeImg2, Tc2c1, *cam);
         const Eigen::Vector3d pc = Triangulate(blackPoint1[i], kp2, Tc1c2.Inverse(), *cam);
         pc1.push_back(Landmark(blackPoint1[i], Twc1, cam, pc[2]));
         DrawMatch(edgeImg1, edgeImg2, {blackPoint1[i]}, kp2, "Epipolar constraint matches");
