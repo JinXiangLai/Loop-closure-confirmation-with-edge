@@ -87,7 +87,7 @@ int main(int argc, char** argv){
     vector<Mat> vDy{dy3};
     vector<Pose> T12{Tc1c3 * disturbT};
     vector<Pose> T12_true{Tc1c3};
-    Optimizer optimizer(vDist, vDx, vDy, 1, 100, useInvZ);
+    Optimizer optimizer(vDist, vDx, vDy, 1, 100, useInvZ, true);
 
     optimizer.Optimize(pc1, T12);
 

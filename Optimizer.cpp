@@ -8,13 +8,14 @@ using namespace cv;
 constexpr double kPriorDepthWeight = 1000;
 
 Optimizer::Optimizer(const vector<Mat> &dist, const vector<Mat> &dx, const vector<Mat> &dy, const double lambda, 
-    const int maxIte, const bool useInvDepth) 
+    const int maxIte, const bool useInvDepth, const bool onlyPoseUpdate) 
     : lambda_(lambda)
     , dist_(dist)
     , dx_(dx)
     , dy_(dy)
     , maxIte_(maxIte)
-    , useInvDepth_(useInvDepth) {}
+    , useInvDepth_(useInvDepth)
+    , onlyPoseUpdate_(onlyPoseUpdate) {}
 
 Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const vector<Pose> &T12){
     
@@ -46,15 +47,18 @@ Eigen::VectorXd Optimizer::CalculateResidual(const vector<Landmark> &pc1, const 
     }
 
     // 添加残差，避免深度值z为负
-    const int startRow = pc1.size() * T12.size() * resDim;
-    for(int i = 0; i < pc1.size(); ++i) {
-        if(useInvDepth_) {
-            res[startRow+i] = exp(-kPriorDepthWeight / pc1[i].invZ_);
-            continue;
-        }
-        res[startRow+i] = exp(-kPriorDepthWeight * pc1[i].z_);
+    if(!onlyPoseUpdate_) {
+        const int startRow = pc1.size() * T12.size() * resDim;
+        for(int i = 0; i < pc1.size(); ++i) {
+            if(useInvDepth_) {
+                res[startRow+i] = exp(-kPriorDepthWeight / pc1[i].invZ_);
+                continue;
+            }
+            res[startRow+i] = exp(-kPriorDepthWeight * pc1[i].z_);
 
+        }
     }
+
     cout << "residual noInrangeNum: " << noInrangeNum << endl;
     return res;
 }
@@ -63,6 +67,9 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
     
     constexpr int resDim = 1;
     Eigen::MatrixXd J(pc1.size()*T12.size()*resDim + pc1.size(), T12.size()*T12[0].Size() + pc1.size()*pc1[0].Size());
+    if(onlyPoseUpdate_) {
+        J.resize(J.rows(), T12.size() * T12[0].Size());
+    }
     J.setZero();
 
     /******** 投影过程 ********
@@ -127,24 +134,86 @@ Eigen::MatrixXd Optimizer::CalculateJacobian(const vector<Landmark>&pc1, const v
             // 给整体雅可比矩阵赋值
             // TODO： 不需要Fixed pose，只要相对Pose准确
             J.block(i * pc1.size() + j, poseStartCol, 1, 6) = J_res_px2 * J_px2_Pc2 * J_Pc2_T12;
-            J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
+            if(!onlyPoseUpdate_) {
+                J.block(i * pc1.size() + j, pointStartCol + j, 1, 1) = J_res_px2 * J_px2_Pc2 * J_Pc2_Pc1 * J_Pc1_z1;
+            }
         }
     }
 
     // 添加深度值z非负雅可比
-    const int startRow = pc1.size() * T12.size() * resDim;
-    int pointStartCol = T12.size() * T12[0].Size();
-    for(int i = 0; i < pc1.size(); ++i) {
-        if(useInvDepth_) {
-            J.block(startRow+i, pointStartCol+i, 1, 1) << kPriorDepthWeight / pow(pc1[i].invZ_, 2) * exp(-kPriorDepthWeight / pc1[i].invZ_);
+    if(!onlyPoseUpdate_) {
+        const int startRow = pc1.size() * T12.size() * resDim;
+        int pointStartCol = T12.size() * T12[0].Size();
+        for(int i = 0; i < pc1.size(); ++i) {
+            if(useInvDepth_) {
+                J.block(startRow+i, pointStartCol+i, 1, 1) << kPriorDepthWeight / pow(pc1[i].invZ_, 2) * exp(-kPriorDepthWeight / pc1[i].invZ_);
+            }
+            J.block(startRow+i, pointStartCol+i, 1, 1) << -kPriorDepthWeight * exp(-kPriorDepthWeight * pc1[i].z_);
         }
-        J.block(startRow+i, pointStartCol+i, 1, 1) << -kPriorDepthWeight * exp(-kPriorDepthWeight * pc1[i].z_);
     }
 
-    // TODO：添加先验pose约束
-    
-
     return J;
+}
+
+Eigen::VectorXd Optimizer::SchurCompleteSolve(const Eigen::MatrixXd &H, const Eigen::VectorXd &b) {
+    /***
+    *     T   p...
+    * T   A   B
+    * p   C   D
+    * ...
+    ***/
+    // 对B进行边缘化，左乘形成上三角矩阵
+    // | I          0 |   | A  B |   | A  B |
+    // | -C*A.inv   I | * | C  D | = | 0  ΔA| ==> ΔA = -C*A.inv*B + D
+    // 对C进行边缘化，右乘形成下三角矩阵
+    // | A  B |   | I  -A.inv*B |   | A  0 |
+    // | C  D | * | 0       I   | = | C  ΔA| = H' ==> 用来求pose
+    // 可以得到:
+    // | I        0 |   | A  B |   | I  -A.inv*B |   | A  0 |
+    // |-C*A.inv  I | * | C  D | * | 0      I    | = | 0  ΔA| = H'
+    
+    // 自己可以构建舒尔补，左乘形成下三角矩阵，先求解pose增量，再求解point增量
+    // | I  -B*D.inv |   | A  B |   | A-B*D.inv*C  0 |
+    // | 0     I     | * | C  D | = |    C         D |
+    // H -= lambdaMatrix;
+    const int poseSize = 6;
+    const int pointSize = H.cols() - poseSize;
+    const int pointDim = 1;
+    const Eigen::MatrixXd &A = H.block(0, 0, poseSize, poseSize);
+    const Eigen::MatrixXd &B = H.block(0, poseSize, poseSize, pointSize);
+    const Eigen::MatrixXd &C = H.block(poseSize, 0, pointSize, poseSize);
+    const Eigen::MatrixXd &D = H.block(poseSize, poseSize, pointSize, pointSize);
+    // cout << "B - C.T:\n" << B-C.transpose() <<std::endl;
+    Eigen::MatrixXd Dinv(D.rows(), D.cols());
+    for(int i = 0; i < pointSize; i+=pointDim) {
+        Dinv.block(i, i, pointDim, pointDim) = D.block(i, i, pointDim, pointDim).inverse();
+    }
+    const Eigen::MatrixXd E = -B * Dinv;
+    Eigen::MatrixXd leftMatrix(H.rows(), H.cols());
+    leftMatrix.block(0, 0, poseSize, poseSize).setIdentity();
+    leftMatrix.block(0, poseSize, poseSize, pointSize) = E;
+    leftMatrix.block(poseSize, 0, pointSize, poseSize).setZero();
+    leftMatrix.block(poseSize, poseSize, pointSize, pointSize).setIdentity();
+
+    // 求pose增量
+    Eigen::MatrixXd newA = A + E * C;
+    Eigen::VectorXd new_b = leftMatrix * b;
+    Eigen::VectorXd deltaPose = newA.inverse() * (new_b).head(poseSize);
+    cout << setprecision(3) << "deltaPose: " << deltaPose.transpose() << std::endl;
+
+
+
+    // 求point增量
+    // H * Δx = b ==> C*deltaX_pose + D*deltaX_point = b
+    // D*deltaX_point = b - C*deltaX_pose
+    // deltaX_point = D.inv * (b - C*deltaX_pose)
+    Eigen::VectorXd deltaPoint = Dinv * (new_b.middleRows(poseSize, pointSize) - C * deltaPose);
+    std::cout << setprecision(3) << "deltaPoint: "<< deltaPoint.transpose() << std::endl;
+
+    Eigen::VectorXd deltaX(deltaPose.rows() + deltaPoint.rows());
+    deltaX.middleRows(0, poseSize) = deltaPose;
+    deltaX.middleRows(poseSize, pointSize) = deltaPoint;
+    return deltaX;
 }
 
 bool Optimizer::Optimize(vector<Landmark> &pc1, vector<Pose> &T12) {
@@ -158,7 +227,13 @@ bool Optimizer::Optimize(vector<Landmark> &pc1, vector<Pose> &T12) {
         I.setIdentity();
         H += lambda_ * I;
         Eigen::MatrixXd g = -J.transpose() * b; // -J' * W * b
-        Eigen::VectorXd delta_x = H.colPivHouseholderQr().solve(g);
+        Eigen::VectorXd delta_x;
+        if(!onlyPoseUpdate_) {
+            delta_x = SchurCompleteSolve(H, g);
+        } else {
+            delta_x = H.colPivHouseholderQr().solve(g);
+        }
+        cout << setprecision(3) << "delta_x: " << delta_x.transpose() << endl; 
         
         // 保留状态备份
         if(lastCost < 0) {
@@ -174,10 +249,12 @@ bool Optimizer::Optimize(vector<Landmark> &pc1, vector<Pose> &T12) {
             const int startRow = i * T12[i].Size();
             T12[i].Update(delta_x.middleRows(startRow, 3), delta_x.middleRows(startRow + 3, 3));
         }
-        updateId += T12.size() * T12[0].Size();
-        for(int i = 0; i < pc1.size(); ++i) {
-            pc1[i].Update(delta_x.middleRows(updateId, 1)[0], useInvDepth_);
-            ++updateId;
+        if(!onlyPoseUpdate_) {
+                updateId += T12.size() * T12[0].Size();
+            for(int i = 0; i < pc1.size(); ++i) {
+                pc1[i].Update(delta_x.middleRows(updateId, 1)[0], useInvDepth_);
+                ++updateId;
+            }
         }
 
         // 判断当前更新是否有效
