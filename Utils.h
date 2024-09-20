@@ -17,8 +17,8 @@ constexpr double kViewRangeY = 10;
 constexpr double kRad2Deg = 180/M_PI;
 constexpr double kDeg2Rad = M_PI/180;
 constexpr int kZnum = 4;
-constexpr double kZ[kZnum] = {5.0, 5.0, 5.0, 5.0};
-constexpr double kMaxDistRange = 4.0;
+constexpr double kZ[kZnum] = {5.0, 6.0, 7.0, 8.0};
+constexpr double kMaxDistRange = 14.0;
 
 
 class Pose {

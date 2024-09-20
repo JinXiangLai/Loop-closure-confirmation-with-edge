@@ -85,28 +85,28 @@ int main(int argc, char** argv){
     GenerateData(Tc1c2, "2", edgeImg2, _dist2, _dx2, _dy2);
     // 需要多帧进行深度滤波
     UpdateDepth(pc1, cam, edgeImg2, Tc1c2.Inverse());
-    ShowPointCloud(pc1, edgeImg2);
+    // ShowPointCloud(pc1, edgeImg2);
 
     Eigen::Vector3d t_c1c3{0.0, 0.0, 2.8};
     const Pose Tc1c3 = ConvertRPYandPostion2Pose({0, 2, 3}, t_c1c3, kDeg2Rad);
     Mat edgeImg3, dist3, dx3, dy3;
     GenerateData(Tc1c3, "3", edgeImg3, dist3, dx3, dy3);
     UpdateDepth(pc1, cam, edgeImg3, Tc1c3.Inverse());
-    ShowPointCloud(pc1, edgeImg3);
+    // ShowPointCloud(pc1, edgeImg3);
 
     Eigen::Vector3d t_c1c4{0.0, 0.0, -1.2};
     const Pose Tc1c4 = ConvertRPYandPostion2Pose({0, 4, 5}, t_c1c4, kDeg2Rad);
     Mat edgeImg4, dist4, dx4, dy4;
     GenerateData(Tc1c4, "4", edgeImg4, dist4, dx4, dy4);
     UpdateDepth(pc1, cam, edgeImg4, Tc1c4.Inverse());
-    ShowPointCloud(pc1, edgeImg4);
+    // ShowPointCloud(pc1, edgeImg4);
 
     Eigen::Vector3d t_c1c5{0.0, 0.0, 2.0};
     const Pose Tc1c5 = ConvertRPYandPostion2Pose({0, 3, 3}, t_c1c5, kDeg2Rad);
     Mat edgeImg5, dist5, dx5, dy5;
     GenerateData(Tc1c5, "5", edgeImg5, dist5, dx5, dy5);
     UpdateDepth(pc1, cam, edgeImg5, Tc1c5.Inverse());
-    ShowPointCloud(pc1, edgeImg5);
+    // ShowPointCloud(pc1, edgeImg5);
 
 
     Eigen::Vector3d disturbP{0.0, 0.0, -0.0};
@@ -117,18 +117,24 @@ int main(int argc, char** argv){
     vector<Mat> vDx{dx3, dx4};
     vector<Mat> vDy{dy3, dy4};
     vector<Pose> T12{Tc1c3, Tc1c4};
-    vector<Pose> T12_true{Tc1c3};
+    vector<Pose> T12_true{Tc1c3, Tc1c4};
+    vector<Mat> edgeImg_true{edgeImg3, edgeImg4, edgeImg5};
+
     Optimizer optimizer(vDist, vDx, vDy, 1, 100, useInvZ);
 
     optimizer.Optimize(pc1, T12);
 
     ShowPointCloud(pc1, edgeImg1);
 
+    vector<Eigen::Vector2d> edgePoint1;
     for(int i = 0; i < T12.size(); ++i) {
         const Pose &Tc1c2 = T12[i];
         vector<Eigen::Vector2d> projBlackPoint2;
         const Pose Tc2c1 = Tc1c2.Inverse();
         for(const Landmark &p : pc1) {
+            if(i == 0) {
+                edgePoint1.push_back(p.uv_);
+            }
             Eigen::Vector3d pc2 = Tc2c1 * p.GetPw();
             projBlackPoint2.push_back(cam->Project2PixelPlane(pc2));
         }
@@ -154,6 +160,8 @@ int main(int argc, char** argv){
             match[i].push_back(p.cam_->Project2PixelPlane(T21[i] * p.GetPc()));
         }
     }
-    DrawMatch(edgeImg1, edgeImg3, vertexPoint1, match[0], "edge matches after optimization");
+    for(int i = 0; i < T12.size(); ++i) {
+        DrawMatch(edgeImg1, edgeImg_true[i], edgePoint1, match[i], "edge matches after optimization" + to_string(i));
+    }
     return 0;
 }

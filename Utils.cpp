@@ -90,21 +90,22 @@ void Landmark::Update(const double delta_z, const bool useInvDepth) {
     const double backZ = z_;
     if(useInvDepth) {
         invZ_ += delta_z;
-        z_ = 1/invZ_;
+        z_ = 1.0/invZ_;
     } else {
         z_ += delta_z; 
-        invZ_ = 1/z_;
+        invZ_ = 1.0/z_;
     }
     if(z_ <= 0) {
         z_ = backZ;
-        invZ_ = 1/z_;
+        invZ_ = 1.0/z_;
     }
 }
 
 void Landmark::UpdateUncertainty() {
     uncertainty_ = depthRange_[1] - depthRange_[0];
-    z_ = 0.5*(depthRange_[0] + depthRange_[1]);
-    invZ_ = 1.0 / z_;
+    z_ = 0.5 * (depthRange_[0] + depthRange_[1]);
+    // invZ_ = 1.0 / z_;
+    invZ_ = 1.0;
 }
 
 // ======== utils functions ======== //
@@ -150,6 +151,12 @@ vector<Eigen::Vector2d> GenerateBlackPoint() {
     res.push_back({col2, row1});
     res.push_back({col2, row2});
     res.push_back({col1, row2});
+
+    res.push_back({col1 + 10, row2 + 20});
+    res.push_back({col2 + 20, row1 + 10});
+    res.push_back({col2 + 8, row2 + 6});
+    res.push_back({col1+10, row2});
+
     return res;
 }
 
